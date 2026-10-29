@@ -1,0 +1,30 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter test
+      # Dart has no GitHub Packages registry: the release asset is the package archive, consumed as a git/tarball dependency.
+      - run: tar --exclude=.git --exclude=.dart_tool -czf "watchtower-dart-${GITHUB_REF_NAME}.tar.gz" lib bin pubspec.yaml README.md LICENSE CHANGELOG.md
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'watchtower-dart-*.tar.gz'
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" watchtower-dart-*.tar.gz --generate-notes --verify-tag

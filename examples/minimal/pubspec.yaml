@@ -1,0 +1,12 @@
+name: watchtower_example
+description: Minimal Flutter app reporting to Watchtower.
+publish_to: none
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  watchtower:
+    path: ../..

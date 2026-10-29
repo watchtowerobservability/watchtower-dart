@@ -1,0 +1,21 @@
+name: watchtower
+description: Watchtower SDK for Flutter and Dart. Errors, traces and logs over OTLP/HTTP, plus a symbol upload tool.
+version: 0.1.0
+repository: https://github.com/watchtowerobservability/watchtower-dart
+publish_to: none
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.19.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+executables:
+  upload_symbols:
