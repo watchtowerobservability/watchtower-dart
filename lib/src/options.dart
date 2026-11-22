@@ -1,4 +1,4 @@
-const sdkVersion = '0.1.0';
+const sdkVersion = '0.1.1';
 
 typedef RedactHook = Object? Function(String key, Object? value);
 
@@ -21,6 +21,14 @@ class WatchtowerOptions {
     this.redact,
     this.maxBatches = 20,
     this.flushInterval = const Duration(seconds: 5),
+    this.appId,
+    this.nativeCrashes = true,
+    this.crashLoopThreshold = 2,
+    this.trackViews = true,
+    this.hangThresholdMs = 5000,
+    this.propagateTo = const [],
+    this.profileLaunch = false,
+    this.buildId,
     Map<String, Object?>? resource,
   })  : endpoint = (endpoint ?? 'http://localhost:4318').replaceAll(RegExp(r'/+$'), ''),
         resource = safeAttributes(resource) {
@@ -31,13 +39,14 @@ class WatchtowerOptions {
     }
   }
 
-  /// Reads WT_PUBLISHABLE_KEY, WT_OTLP_ENDPOINT, WT_SERVICE, WT_ENVIRONMENT, WT_RELEASE.
+  /// Reads WT_PUBLISHABLE_KEY, WT_OTLP_ENDPOINT, WT_SERVICE, WT_ENVIRONMENT, WT_RELEASE, WT_APP_ID.
   factory WatchtowerOptions.fromEnvironment({RedactHook? redact}) => WatchtowerOptions(
         publishableKey: const String.fromEnvironment('WT_PUBLISHABLE_KEY'),
         endpoint: _nonEmpty(const String.fromEnvironment('WT_OTLP_ENDPOINT')),
         service: const String.fromEnvironment('WT_SERVICE', defaultValue: 'flutter-app'),
         environment: _nonEmpty(const String.fromEnvironment('WT_ENVIRONMENT')),
         release: _nonEmpty(const String.fromEnvironment('WT_RELEASE')),
+        appId: _nonEmpty(const String.fromEnvironment('WT_APP_ID')),
         redact: redact,
       );
 
@@ -46,6 +55,41 @@ class WatchtowerOptions {
   final String service;
   final String? environment;
   final String? release;
+
+  /// The app's bundle id / package name (e.g. `com.example.app`). An app sends no Origin, so the
+  /// publishable key is accepted only with this id on its app id list (`X-Watchtower-App-Id`).
+  /// Null (the default) uses the id the iOS / Android plugin reports; set it only to override.
+  final String? appId;
+
+  /// Start the native iOS / Android SDK under this client (native crashes, hangs and ANRs, and
+  /// the crash-loop guard read by `Watchtower.crashLoop`). No-op where the plugin is absent.
+  final bool nativeCrashes;
+
+  /// `CrashLoopState.isCrashLooping` is true from this many consecutive launch crashes.
+  final int crashLoopThreshold;
+
+  /// Native screen views (one RUM `view` per resumed activity / view controller). Flutter routes
+  /// come from [WatchtowerNavigatorObserver]; turn this off when it covers every screen.
+  final bool trackViews;
+
+  /// The main thread counts as hung (an ANR on Android, an app hang on iOS) after this many ms.
+  final int hangThresholdMs;
+
+  /// URL prefixes the native SDKs add a W3C `traceparent` header to.
+  final List<String> propagateTo;
+
+  /// Sample the main thread's stack until the first frame of a cold launch (`app_launch_profile`).
+  final bool profileLaunch;
+
+  /// The debug-file build id (dSYM UUID, ProGuard mapping id) added to every native error.
+  final String? buildId;
+
+  /// Headers of every request to Watchtower.
+  Map<String, String> get headers => {
+        'Authorization': 'Bearer $publishableKey',
+        'Content-Type': 'application/json',
+        if (appId != null) 'X-Watchtower-App-Id': appId!,
+      };
 
   /// Runs over every attribute before export; return the value to send (null drops it).
   final RedactHook? redact;

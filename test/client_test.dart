@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -128,5 +129,83 @@ void main() {
     final spans = sent.single.body['resourceSpans'][0]['scopeSpans'][0]['spans'] as List;
     expect(spans[0]['traceId'], spans[1]['traceId']);
     expect(spans[0]['parentSpanId'], spans[1]['spanId']);
+  });
+
+  test('feedbackBody trims, cuts and links only a valid event id', () {
+    expect(feedbackBody('  broken  ', name: ' Ann ', email: '', eventId: '0A1B2C3D-0000-4000-8000-00000000000F'),
+        {'message': 'broken', 'event_id': '0a1b2c3d00004000800000000000000f', 'name': 'Ann'});
+    expect(feedbackBody('   '), isNull);
+    expect(feedbackBody('x', eventId: 'nope')!.containsKey('event_id'), isFalse);
+    expect(feedbackBody('a' * 5000)!['message'], hasLength(4096));
+  });
+
+  test('feedback posts JSON with the key and reports the outcome', () async {
+    final w = Watchtower.init(opts(), transport: transport, installHooks: false);
+    status = 202;
+    expect(await w.feedback('it broke', email: 'a@b.example'), isTrue);
+    expect(sent.single.url.toString(), 'https://ingest.example/v1/rum/feedback');
+    expect(sent.single.headers['Authorization'], 'Bearer wtp_secretvalue123');
+    expect(sent.single.body, {'message': 'it broke', 'email': 'a@b.example'});
+    expect(await w.feedback('  '), isFalse);
+    status = 429;
+    expect(await w.feedback('again'), isFalse);
+  });
+
+  test('an app id rides on every request so the edge accepts the key without an Origin', () async {
+    final o = WatchtowerOptions(publishableKey: 'wtp_secretvalue123', endpoint: 'https://ingest.example', appId: 'com.example.app');
+    final w = Watchtower.init(o, transport: transport, installHooks: false);
+    status = 202;
+    expect(await w.feedback('hi'), isTrue);
+    expect(sent.single.headers['X-Watchtower-App-Id'], 'com.example.app');
+    expect(sent.single.headers.containsKey('Origin'), isFalse);
+    expect(opts().headers.containsKey('X-Watchtower-App-Id'), isFalse);
+  });
+
+  test('the native crash-loop guard comes from the plugin, started with the client', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('dev.watchtower/native');
+    final calls = <MethodCall>[];
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (c) async {
+      calls.add(c);
+      return {'launchCrashCount': 3, 'isCrashLooping': true};
+    });
+    final w = Watchtower.init(
+        WatchtowerOptions(publishableKey: 'wtp_secretvalue123', service: 'app', crashLoopThreshold: 3),
+        transport: transport, installHooks: false);
+    final st = await w.crashLoop();
+    expect(st.launchCrashCount, 3);
+    expect(st.isCrashLooping, isTrue);
+    final args = calls.single.arguments as Map;
+    expect(calls.single.method, 'start');
+    expect(args['crashLoopThreshold'], 3);
+    expect(args['key'], 'wtp_secretvalue123');
+    // without the plugin (or with it turned off) there is no loop and nothing throws
+    messenger.setMockMethodCallHandler(channel, null);
+    expect((await Watchtower.init(opts(), transport: transport, installHooks: false).crashLoop()).isCrashLooping, isFalse);
+    final off = WatchtowerOptions(publishableKey: 'wtp_secretvalue123', nativeCrashes: false);
+    expect((await Watchtower.init(off, transport: transport, installHooks: false).crashLoop()).launchCrashCount, 0);
+    expect(calls, hasLength(1));
+  });
+
+  test('the app id defaults to what the plugin reports, and early sends wait for it', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const channel = MethodChannel('dev.watchtower/native');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (c) async {
+      await Future<void>.delayed(const Duration(milliseconds: 20)); // answers after the first send
+      return {'launchCrashCount': 0, 'isCrashLooping': false, 'appId': 'com.example.shop'};
+    });
+    final w = Watchtower.init(opts(), transport: transport, installHooks: false);
+    await w.captureMessage('early');
+    expect(sent.single.headers['X-Watchtower-App-Id'], 'com.example.shop');
+    status = 202;
+    expect(await w.feedback('hi'), isTrue);
+    expect(sent.last.headers['X-Watchtower-App-Id'], 'com.example.shop');
+    // an explicit appId wins over the plugin's
+    final o = WatchtowerOptions(publishableKey: 'wtp_secretvalue123', endpoint: 'https://ingest.example', appId: 'com.override');
+    await Watchtower.init(o, transport: transport, installHooks: false).captureMessage('x');
+    expect(sent.last.headers['X-Watchtower-App-Id'], 'com.override');
+    messenger.setMockMethodCallHandler(channel, null);
   });
 }

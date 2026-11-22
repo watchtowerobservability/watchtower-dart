@@ -28,3 +28,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" watchtower-dart-*.tar.gz --generate-notes --verify-tag
+      # pub.dev: automated publishing (OIDC, no stored token). The owner enables it once on pub.dev
+      # (package admin > Automated publishing > this repository, tag pattern v{{version}}) and sets
+      # the repository variable PUB_DEV_PUBLISH=true; until then only the dry run executes.
+      - run: flutter pub publish --dry-run
+      - name: pub.dev
+        if: ${{ vars.PUB_DEV_PUBLISH == 'true' }}
+        run: flutter pub publish --force

@@ -146,9 +146,13 @@ Map<String, Object?> encodeLogs(WatchtowerOptions o, List<LogEntry> logs) =>
 
 /// Posts batches; a batch that fails transiently stays queued (bounded) and is retried on the next flush.
 class Exporter {
-  Exporter(this.options, this.transport);
+  Exporter(this.options, this.transport) : headers = Future.value(options.headers);
   final WatchtowerOptions options;
   final Transport transport;
+
+  /// Request headers; the client replaces them with ones carrying the native app id, and sends
+  /// wait for them so an early error is not refused for want of it.
+  Future<Map<String, String>> headers;
   final _pending = <(String, String)>[]; // (path, body)
   bool _flushing = false;
 
@@ -171,7 +175,7 @@ class Exporter {
         try {
           final code = await transport(
             Uri.parse('${options.endpoint}$path'),
-            {'Authorization': 'Bearer ${options.publishableKey}', 'Content-Type': 'application/json'},
+            await headers,
             body,
           );
           // Other 4xx will never succeed: drop rather than retry forever.

@@ -24,12 +24,23 @@ class WatchtowerHttpClient extends http.BaseClient {
       'server.address': u.host,
     });
     if (propagateTo.contains(u.host)) request.headers['traceparent'] = span.traceparent;
+    final started = DateTime.now();
     try {
       final res = await _inner.send(request);
+      wt.recordRum('resource', 'native',
+          value: DateTime.now().difference(started).inMilliseconds.toDouble(),
+          attrs: resourceAttrs(u, request.method, res.statusCode, res.contentLength),
+          traceId: span.traceId,
+          spanId: span.spanId);
       span.attributes['http.response.status_code'] = res.statusCode;
       if (res.statusCode >= 500) span.error = true;
       return res;
     } catch (e) {
+      wt.recordRum('resource', 'native',
+          value: DateTime.now().difference(started).inMilliseconds.toDouble(),
+          attrs: resourceAttrs(u, request.method, null, null),
+          traceId: span.traceId,
+          spanId: span.spanId);
       span.recordError(e);
       rethrow;
     } finally {
@@ -40,3 +51,13 @@ class WatchtowerHttpClient extends http.BaseClient {
   @override
   void close() => _inner.close();
 }
+
+/// Attributes of a RUM `resource` event: URL without query or fragment (both can carry tokens).
+Map<String, Object?> resourceAttrs(Uri u, String method, int? status, int? bytes) => {
+      'url': Uri(scheme: u.scheme, host: u.host, port: u.hasPort ? u.port : null, path: u.path).toString(),
+      'method': method.toUpperCase(),
+      'initiator_type': 'native',
+      if (status != null) 'status': status,
+      if (bytes != null && bytes >= 0) 'transfer_size': bytes,
+      if (status == null || status >= 400) 'failed': true,
+    };
