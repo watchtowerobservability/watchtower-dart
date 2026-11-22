@@ -16,6 +16,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
+repositories { mavenCentral() }
+
 dependencies {
-    implementation("dev.watchtower:watchtower-android:0.1.0")
+    implementation("io.github.watchtowerobservability:watchtower-android:0.1.2")
 }

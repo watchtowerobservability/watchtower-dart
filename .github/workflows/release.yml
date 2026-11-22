@@ -27,11 +27,20 @@ jobs:
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" watchtower-dart-*.tar.gz --generate-notes --verify-tag
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" watchtower-dart-*.tar.gz --generate-notes --verify-tag
       # pub.dev: automated publishing (OIDC, no stored token). The owner enables it once on pub.dev
       # (package admin > Automated publishing > this repository, tag pattern v{{version}}) and sets
       # the repository variable PUB_DEV_PUBLISH=true; until then only the dry run executes.
       - run: flutter pub publish --dry-run
       - name: pub.dev
-        if: ${{ vars.PUB_DEV_PUBLISH == 'true' }}
-        run: flutter pub publish --force
+        env:
+          # PUB_CREDENTIALS (an owner's pub-credentials.json) bootstraps the first versions; once the
+          # package exists the owner can switch to OIDC (vars.PUB_DEV_PUBLISH) and delete the secret.
+          PUB_CREDENTIALS: ${{ secrets.PUB_CREDENTIALS }}
+          OIDC: ${{ vars.PUB_DEV_PUBLISH }}
+        run: |
+          v="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
+          if curl -fsS "https://pub.dev/api/packages/watchtower" 2>/dev/null | grep -q "\"version\":\"$v\""; then echo "watchtower $v already on pub.dev"; exit 0; fi
+          if [ -n "$PUB_CREDENTIALS" ]; then mkdir -p ~/.config/dart && printf '%s' "$PUB_CREDENTIALS" > ~/.config/dart/pub-credentials.json
+          elif [ "$OIDC" != "true" ]; then echo "no pub.dev credentials; skipping"; exit 0; fi
+          flutter pub publish --force

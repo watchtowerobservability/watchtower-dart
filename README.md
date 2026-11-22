@@ -74,7 +74,7 @@ final loop = await Watchtower.instance!.crashLoop();
 if (loop.isCrashLooping) { /* skip the risky start-up work, offer a reset */ }
 ```
 
-The native SDK must be available to the app build: `dev.watchtower:watchtower-android` on Android,
+The native SDK must be available to the app build: `io.github.watchtowerobservability:watchtower-android` on Android,
 the `Watchtower` pod on iOS.
 
 ## Symbols and obfuscation maps
